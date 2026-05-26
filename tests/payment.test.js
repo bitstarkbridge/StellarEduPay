@@ -3,6 +3,7 @@
 // Must set required env vars before app is loaded (config/index.js validates on require)
 process.env.MONGO_URI = 'mongodb://localhost:27017/test';
 process.env.SCHOOL_WALLET_ADDRESS = 'GCICZOP346CKADPWOZ6JAQ7OCGH44UELNS3GSDXFOTSZRW6OYZZ6KSY7B';
+process.env.JWT_SECRET = 'test-jwt-secret-for-payment-controller-suite';
 
 const request = require('supertest');
 
@@ -41,18 +42,41 @@ jest.mock('../backend/src/models/studentModel', () => {
   };
 });
 
-jest.mock('../backend/src/models/paymentModel', () => ({
-  find: jest.fn().mockReturnValue({
-    sort: jest.fn().mockReturnValue({
-      lean: jest.fn().mockResolvedValue([{ studentId: 'STU001', txHash: 'abc123', amount: 200 }]),
-      populate: jest.fn().mockResolvedValue([{ studentId: { studentId: 'STU001', name: 'Alice' }, txHash: 'abc123', amount: 200 }]),
-    }),
-  }),
-  findOne: jest.fn().mockResolvedValue(null),
-  create: jest.fn().mockResolvedValue({}),
-  aggregate: jest.fn().mockResolvedValue([]),
-  countDocuments: jest.fn().mockResolvedValue(0),
-}));
+jest.mock('../backend/src/models/paymentModel', () => {
+  const mockPayments = [
+    { schoolId: 'SCH001', studentId: 'STU001', txHash: 'abc123', amount: 200 },
+  ];
+
+  const matchesFilter = (payment, filter = {}) =>
+    Object.entries(filter).every(([key, value]) => {
+      if (value && typeof value === 'object') return true;
+      return payment[key] === value;
+    });
+
+  const makeQuery = (docs) => {
+    const chain = {
+      sort: jest.fn(() => chain),
+      skip: jest.fn(() => chain),
+      limit: jest.fn(() => chain),
+      lean: jest.fn(() => Promise.resolve(docs)),
+      populate: jest.fn(() => Promise.resolve(
+        docs.map((p) => ({
+          ...p,
+          studentId: { studentId: p.studentId, name: 'Alice' },
+        })),
+      )),
+    };
+    return chain;
+  };
+
+  return {
+    find: jest.fn((filter) => makeQuery(mockPayments.filter((p) => matchesFilter(p, filter)))),
+    findOne: jest.fn().mockResolvedValue(null),
+    create: jest.fn().mockResolvedValue({}),
+    aggregate: jest.fn().mockResolvedValue([]),
+    countDocuments: jest.fn((filter) => Promise.resolve(mockPayments.filter((p) => matchesFilter(p, filter)).length)),
+  };
+});
 
 jest.mock('../backend/src/models/paymentIntentModel', () => ({
   create: jest.fn().mockResolvedValue({ studentId: 'STU001', amount: 200, memo: 'ABCD1234', status: 'pending' }),
@@ -77,6 +101,20 @@ jest.mock('../backend/src/services/retryService', () => ({
   isRetryWorkerRunning: jest.fn().mockReturnValue(false),
 }));
 
+jest.mock('../backend/src/services/auditService', () => ({
+  logAudit: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('../backend/src/queue/transactionQueue', () => ({
+  enqueueTransaction: jest.fn().mockResolvedValue({ id: 'mock-job' }),
+  getJobStatus: jest.fn().mockResolvedValue({ found: false }),
+}));
+
+jest.mock('../backend/src/services/transactionQueueService', () => ({
+  startWorker: jest.fn(),
+  stopWorker: jest.fn(),
+}));
+
 jest.mock('../backend/src/services/transactionService', () => ({
   startPolling: jest.fn(),
   stopPolling: jest.fn(),
@@ -92,19 +130,47 @@ jest.mock('../backend/src/services/reminderService', () => ({
   processReminders: jest.fn().mockResolvedValue({ schools: 0, eligible: 0, sent: 0, failed: 0, skipped: 0 }),
 }));
 
-jest.mock('../backend/src/models/schoolModel', () => ({
-  findOne: jest.fn().mockReturnValue({
-    lean: jest.fn().mockResolvedValue({
+jest.mock('../backend/src/models/schoolModel', () => {
+  const schools = [
+    {
       schoolId: 'SCH001',
       name: 'Test School',
       slug: 'test-school',
       stellarAddress: 'GCICZOP346CKADPWOZ6JAQ7OCGH44UELNS3GSDXFOTSZRW6OYZZ6KSY7B',
       localCurrency: 'USD',
       isActive: true,
-    }),
-  }),
-  create: jest.fn().mockResolvedValue({}),
-}));
+    },
+    {
+      schoolId: 'SCH_A',
+      name: 'School A',
+      slug: 'school-a',
+      stellarAddress: 'GCICZOP346CKADPWOZ6JAQ7OCGH44UELNS3GSDXFOTSZRW6OYZZ6KSY7B',
+      localCurrency: 'USD',
+      isActive: true,
+    },
+    {
+      schoolId: 'SCH_B',
+      name: 'School B',
+      slug: 'school-b',
+      stellarAddress: 'GCICZOP346CKADPWOZ6JAQ7OCGH44UELNS3GSDXFOTSZRW6OYZZ6KSY7B',
+      localCurrency: 'USD',
+      isActive: true,
+    },
+  ];
+
+  return {
+    findOne: jest.fn((query) => ({
+      lean: jest.fn().mockResolvedValue(
+        schools.find((school) => (
+          (!query.schoolId || school.schoolId === query.schoolId) &&
+          (!query.slug || school.slug === query.slug) &&
+          (query.isActive === undefined || school.isActive === query.isActive)
+        )) || null,
+      ),
+    })),
+    create: jest.fn().mockResolvedValue({}),
+  };
+});
 
 jest.mock('../backend/src/models/pendingVerificationModel', () => ({
   find: jest.fn().mockReturnValue({ sort: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) }),
@@ -198,6 +264,16 @@ function api(app) {
 }
 const testApi = api(app);
 
+function paymentQueryResult(docs) {
+  const chain = {
+    sort: jest.fn(() => chain),
+    skip: jest.fn(() => chain),
+    limit: jest.fn(() => chain),
+    lean: jest.fn(() => Promise.resolve(docs)),
+  };
+  return chain;
+}
+
 // ─── Full Payment Flow ────────────────────────────────────────────────────────
 
 describe('Full payment flow', () => {
@@ -238,6 +314,41 @@ describe('Full payment flow', () => {
     expect(res.body).toHaveProperty('pages');
     expect(Array.isArray(res.body.payments)).toBe(true);
     expect(res.body.payments[0]).toHaveProperty('txHash', 'abc123');
+  });
+
+  test('GET /api/payments/:studentId is scoped to the current school', async () => {
+    const Student = require('../backend/src/models/studentModel');
+    const Payment = require('../backend/src/models/paymentModel');
+    const cache = require('../backend/src/cache');
+    const crossSchoolPayments = [
+      { schoolId: 'SCH_A', studentId: 'STU001', txHash: 'school-a-tx', amount: 100 },
+      { schoolId: 'SCH_B', studentId: 'STU001', txHash: 'school-b-tx', amount: 200 },
+    ];
+    const byFilter = (filter) => crossSchoolPayments.filter(
+      (p) => p.schoolId === filter.schoolId && p.studentId === filter.studentId,
+    );
+
+    cache.del('school:SCH_A', 'school:SCH_B');
+    Student.findOne.mockResolvedValueOnce({
+      schoolId: 'SCH_A',
+      studentId: 'STU001',
+      name: 'Alice',
+      class: '5A',
+      feeAmount: 200,
+    });
+    Payment.countDocuments.mockImplementationOnce((filter) => Promise.resolve(byFilter(filter).length));
+    Payment.find.mockImplementationOnce((filter) => paymentQueryResult(byFilter(filter)));
+
+    const res = await request(app)
+      .get('/api/payments/STU001')
+      .set('X-School-ID', 'SCH_A');
+
+    expect(res.status).toBe(200);
+    expect(res.body.payments).toHaveLength(1);
+    expect(res.body.payments[0]).toHaveProperty('txHash', 'school-a-tx');
+    expect(res.body.payments.map((p) => p.txHash)).not.toContain('school-b-tx');
+    expect(Payment.countDocuments).toHaveBeenLastCalledWith({ schoolId: 'SCH_A', studentId: 'STU001' });
+    expect(Payment.find).toHaveBeenLastCalledWith({ schoolId: 'SCH_A', studentId: 'STU001' });
   });
 });
 

@@ -247,11 +247,11 @@ async function submitTransaction(req, res, next) {
         .json({ error: "Transaction must include the student ID as a memo" });
     }
 
-    let paymentRecord = await Payment.findOne({ memo, status: "PENDING" }).sort(
+    let paymentRecord = await Payment.findOne({ schoolId: req.schoolId, memo, status: "PENDING" }).sort(
       { createdAt: -1 },
     );
     if (!paymentRecord) {
-      const studentObj = await Student.findOne({ studentId: memo });
+      const studentObj = await Student.findOne({ schoolId: req.schoolId, studentId: memo });
       if (!studentObj) {
         return res.status(404).json({
           error:
@@ -259,7 +259,8 @@ async function submitTransaction(req, res, next) {
         });
       }
       paymentRecord = new Payment({
-        studentId: studentObj._id,
+        schoolId: req.schoolId,
+        studentId: studentObj.studentId || memo,
         memo,
         amount: 0,
       });
@@ -373,7 +374,7 @@ async function verifyPayment(req, res, next) {
     const normalizedHash = hashValidation.normalized;
 
     // Check if payment already exists (idempotency)
-    const existing = await Payment.findOne({ txHash: normalizedHash });
+    const existing = await Payment.findOne({ schoolId, txHash: normalizedHash });
     if (existing) {
       // Log cached verification
       await logAudit({
@@ -511,7 +512,7 @@ async function verifyPayment(req, res, next) {
     }
 
     const studentStrId = result.studentId || result.memo;
-    const studentObj = await Student.findOne({ studentId: studentStrId });
+    const studentObj = await Student.findOne({ schoolId, studentId: studentStrId });
     if (!studentObj) {
       // Log student not found
       await logAudit({
