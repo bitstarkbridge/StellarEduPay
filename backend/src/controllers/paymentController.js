@@ -728,6 +728,22 @@ async function syncAllPayments(req, res, next) {
   _syncLocks.add(schoolId);
   try {
     const summary = await syncPaymentsForSchool(req.school);
+
+    // Audit log
+    if (req.auditContext) {
+      await logAudit({
+        schoolId,
+        action: 'payment_manual_sync',
+        performedBy: req.auditContext.performedBy,
+        targetId: schoolId,
+        targetType: 'payment',
+        details: { syncResult: summary },
+        result: 'success',
+        ipAddress: req.auditContext.ipAddress,
+        userAgent: req.auditContext.userAgent,
+      });
+    }
+
     res.json({
       message: "Sync complete",
       summary: {
@@ -740,24 +756,6 @@ async function syncAllPayments(req, res, next) {
         failedDetails:   summary.failedDetails,
       },
     });
-    const result = await syncPaymentsForSchool(req.school);
-
-    // Audit log
-    if (req.auditContext) {
-      await logAudit({
-        schoolId,
-        action: 'payment_manual_sync',
-        performedBy: req.auditContext.performedBy,
-        targetId: schoolId,
-        targetType: 'payment',
-        details: { syncResult: result },
-        result: 'success',
-        ipAddress: req.auditContext.ipAddress,
-        userAgent: req.auditContext.userAgent,
-      });
-    }
-
-    res.json({ message: "Sync complete" });
   } catch (err) {
     // Audit log for failure
     if (req.auditContext) {
