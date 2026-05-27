@@ -1,3 +1,7 @@
+'use strict';
+
+const logger = require('../utils/logger');
+
 /**
  * Dynamic Fee Adjustment Engine
  * 
@@ -111,6 +115,14 @@ class DynamicFeeAdjustmentEngine {
     }
 
     const finalFee = Math.max(0, currentFee); // Prevent negative fees
+
+    if (currentFee < 0) {
+      logger.warn({
+        msg: 'Fee clamped to 0 after adjustments',
+        studentId: context.studentId || null,
+        unclampedAmount: parseFloat(currentFee.toFixed(2)),
+      });
+    }
 
     return {
       baseFee: context.baseAmount,

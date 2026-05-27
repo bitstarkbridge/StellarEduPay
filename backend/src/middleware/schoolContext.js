@@ -25,6 +25,7 @@ async function resolveSchool(req, res, next) {
     const schoolSlug = req.headers['x-school-slug'];
 
     if (!schoolId && !schoolSlug) {
+      res.set('Cache-Control', 'no-store');
       return res.status(400).json({
         error: 'School context is required. Provide X-School-ID or X-School-Slug header.',
         code: 'MISSING_SCHOOL_CONTEXT',
@@ -37,10 +38,10 @@ async function resolveSchool(req, res, next) {
     if (schoolId) {
       cacheKey = cache.KEYS.school ? cache.KEYS.school(schoolId) : `school:${schoolId}`;
       school = cache.get(cacheKey);
-      
+
       if (!school) {
-        school = await School.findOne({ schoolId, isActive: true }).lean();
-        if (school) {
+        school = await School.findOne({ schoolId }).lean();
+        if (school && school.isActive) {
           cache.set(cacheKey, school, cache.TTL.SCHOOL || 300);
         }
       }
@@ -48,19 +49,28 @@ async function resolveSchool(req, res, next) {
       const slug = schoolSlug.toLowerCase().trim();
       cacheKey = cache.KEYS.school ? cache.KEYS.school(slug) : `school:${slug}`;
       school = cache.get(cacheKey);
-      
+
       if (!school) {
-        school = await School.findOne({ slug, isActive: true }).lean();
-        if (school) {
+        school = await School.findOne({ slug }).lean();
+        if (school && school.isActive) {
           cache.set(cacheKey, school, cache.TTL.SCHOOL || 300);
         }
       }
     }
 
     if (!school) {
+      res.set('Cache-Control', 'no-store');
       return res.status(404).json({
-        error: 'School not found or inactive.',
-        code: 'SCHOOL_NOT_FOUND',
+        error: 'School not found.',
+        code: 'NOT_FOUND',
+      });
+    }
+
+    if (!school.isActive) {
+      res.set('Cache-Control', 'no-store');
+      return res.status(403).json({
+        error: 'School is deactivated.',
+        code: 'SCHOOL_INACTIVE',
       });
     }
 

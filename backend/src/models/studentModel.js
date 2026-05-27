@@ -89,6 +89,7 @@ studentSchema.index({ schoolId: 1, feePaid: 1 });
 studentSchema.index({ studentId: 1, version: 1 });
 studentSchema.index({ feePaid: 1, class: 1 });
 studentSchema.index({ totalPaid: 1 });
+studentSchema.index({ name: 'text', studentId: 'text' });
 
 studentSchema.pre('save', function (next) {
   // Sync feeAmount with fees array for backward compatibility
