@@ -12,8 +12,10 @@ const { logger } = require('../utils/logger');
 
 // ── Connection Pool Configuration ──────────────────────────────────────────────
 const POOL_CONFIG = {
-  // Maximum number of sockets in the connection pool
-  maxPoolSize: parseInt(process.env.DB_MAX_POOL_SIZE || '100', 10),
+  // Maximum number of sockets in the connection pool.
+  // MONGODB_POOL_SIZE is the canonical env var (default: 20).
+  // DB_MAX_POOL_SIZE is also accepted for backward compatibility.
+  maxPoolSize: parseInt(process.env.MONGODB_POOL_SIZE || process.env.DB_MAX_POOL_SIZE || '20', 10),
   
   // Minimum number of sockets in the connection pool
   minPoolSize: parseInt(process.env.DB_MIN_POOL_SIZE || '10', 10),
@@ -24,8 +26,11 @@ const POOL_CONFIG = {
   // Connection timeout in milliseconds
   connectTimeoutMS: parseInt(process.env.DB_CONNECT_TIMEOUT_MS || '10000', 10),
   
-  // Socket timeout in milliseconds
+  // Socket timeout in milliseconds (default: 45000)
   socketTimeoutMS: parseInt(process.env.DB_SOCKET_TIMEOUT_MS || '45000', 10),
+
+  // Server selection timeout in milliseconds (default: 5000)
+  serverSelectionTimeoutMS: parseInt(process.env.DB_SERVER_SELECTION_TIMEOUT_MS || '5000', 10),
   
   // Maximum number of concurrent operations
   maxConcurrent: parseInt(process.env.DB_MAX_CONCURRENT || '50', 10),
@@ -122,7 +127,7 @@ async function connectWithRetry(uri, options = {}, retryCount = 0) {
       connectTimeoutMS: POOL_CONFIG.connectTimeoutMS,
       socketTimeoutMS: POOL_CONFIG.socketTimeoutMS,
       // Server selection
-      serverSelectionTimeoutMS: POOL_CONFIG.connectTimeoutMS,
+      serverSelectionTimeoutMS: POOL_CONFIG.serverSelectionTimeoutMS,
       // Retry configuration
       retryWrites: true,
       retryReads: true,

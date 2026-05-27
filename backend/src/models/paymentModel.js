@@ -63,6 +63,9 @@ softDelete(paymentSchema);
 // Compound unique index enforces per-school txHash uniqueness (same tx can exist in two schools).
 // The single-field txHash index (inline, non-unique) is kept for cross-school lookups.
 paymentSchema.index({ schoolId: 1, txHash: 1 }, { unique: true });
+// Unique sparse index on txHash for fast duplicate detection across all schools.
+// sparse: true excludes documents where txHash is null (manually created records).
+paymentSchema.index({ txHash: 1 }, { unique: true, sparse: true });
 paymentSchema.index({ studentId: 1, confirmedAt: -1 });
 paymentSchema.index({ schoolId: 1, confirmedAt: -1 });
 paymentSchema.index({ schoolId: 1, studentId: 1, confirmedAt: -1 });
