@@ -13,6 +13,7 @@ const {
   bulkImportStudents,
   getOverdueStudents,
   resetPayment,
+  reconcileStudent,
 } = require('../controllers/studentController');
 const { resubscribeReminders } = require('../controllers/reminderController');
 const { validateRegisterStudent, validateStudentIdParam } = require('../middleware/validate');
@@ -37,6 +38,7 @@ router.get('/:studentId', validateStudentIdParam, getStudent);
 router.put('/:studentId', requireAdminAuth, validateStudentIdParam, updateStudent);
 router.delete('/:studentId', requireAdminAuth, validateStudentIdParam, deleteStudent);
 router.post('/:studentId/reset-payment', requireAdminAuth, validateStudentIdParam, resetPayment);
+router.post('/:studentId/reconcile', requireAdminAuth, validateStudentIdParam, reconcileStudent);
 router.post('/:studentId/reminders/resubscribe', requireAdminAuth, validateStudentIdParam, resubscribeReminders);
 
 module.exports = router;

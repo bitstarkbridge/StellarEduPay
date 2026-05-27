@@ -131,7 +131,7 @@ async function getAllStudents(req, res, next) {
     }
 
     const [students, total] = await Promise.all([
-      Student.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Student.find(filter, req.admin ? {} : { walletAddress: 0, contactEmail: 0, parentPhone: 0 }).sort({ createdAt: -1 }).skip(skip).limit(limit),
       Student.countDocuments(filter),
     ]);
 
@@ -616,4 +616,65 @@ async function resetPayment(req, res, next) {
   }
 }
 
-module.exports = { registerStudent, getAllStudents, getStudent, updateStudent, deleteStudent, getPaymentSummary, bulkImportStudents, getOverdueStudents, resetPayment };
+async function reconcileStudent(req, res, next) {
+  try {
+    const { studentId } = req.params;
+    const { schoolId } = req;
+
+    const student = await Student.findOne({ schoolId, studentId });
+    if (!student) {
+      const err = new Error('Student not found');
+      err.code = 'NOT_FOUND';
+      return next(err);
+    }
+
+    const Payment = require('../models/paymentModel');
+    const result = await Payment.aggregate([
+      { $match: { schoolId, studentId, status: 'SUCCESS', deletedAt: null } },
+      { $group: { _id: null, computedTotal: { $sum: '$amount' } } },
+    ]);
+
+    const computedTotal = result.length > 0 ? result[0].computedTotal : 0;
+    const storedTotal = student.totalPaid || 0;
+
+    if (Math.abs(computedTotal - storedTotal) > 0.0000001) {
+      const logger = require('../utils/logger');
+      logger.warn('Reconciliation mismatch detected', {
+        schoolId,
+        studentId,
+        storedTotal,
+        computedTotal,
+        diff: computedTotal - storedTotal,
+      });
+
+      student.totalPaid = computedTotal;
+      student.remainingBalance = Math.max(0, student.feeAmount - computedTotal);
+      student.feePaid = computedTotal >= student.feeAmount;
+      await student.save();
+
+      return res.json({
+        studentId,
+        reconciled: true,
+        storedTotal,
+        computedTotal,
+        diff: computedTotal - storedTotal,
+        feePaid: student.feePaid,
+        remainingBalance: student.remainingBalance,
+      });
+    }
+
+    res.json({
+      studentId,
+      reconciled: false,
+      storedTotal,
+      computedTotal,
+      diff: 0,
+      feePaid: student.feePaid,
+      remainingBalance: student.remainingBalance,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { registerStudent, getAllStudents, getStudent, updateStudent, deleteStudent, getPaymentSummary, bulkImportStudents, getOverdueStudents, resetPayment, reconcileStudent };

@@ -27,6 +27,7 @@ const { startConsistencyScheduler } = require('./services/consistencyScheduler')
 const { startReminderScheduler, stopReminderScheduler } = require('./services/reminderService');
 const { startWorker: startTxQueueWorker, stopWorker: stopTxQueueWorker } = require('./services/transactionQueueService');
 const { startSessionCleanupScheduler, stopSessionCleanupScheduler } = require('./services/sessionCleanupService');
+const { startReconciliationScheduler, stopReconciliationScheduler } = require('./services/reconciliationService');
 const { initializeRetryQueue, setupMonitoring } = require('./config/retryQueueSetup');
 const { notFoundHandler, globalErrorHandler } = require('./middleware/errorHandler');
 const { requestLogger } = require('./middleware/requestLogger');
@@ -158,6 +159,7 @@ connectWithRetry().then(async () => {
   startTxQueueWorker();
   startReminderScheduler();
   startSessionCleanupScheduler();
+  startReconciliationScheduler();
   registerPaymentSavedSubscribers();
 
   // Only initialise BullMQ when Redis is configured
@@ -192,6 +194,7 @@ async function shutdown(signal) {
   stopTxQueueWorker();
   stopReminderScheduler();
   stopSessionCleanupScheduler();
+  stopReconciliationScheduler();
 
   // Force exit after SHUTDOWN_TIMEOUT_MS regardless of in-flight requests
   const forceExitTimer = setTimeout(() => {
