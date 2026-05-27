@@ -5,10 +5,19 @@ const StellarSdk = require('@stellar/stellar-sdk');
 const School = require('../models/schoolModel');
 const { logAudit } = require('../services/auditService');
 
+function isValidTimezone(tz) {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // POST /api/schools
 async function createSchool(req, res, next) {
   try {
-    const { name, slug, stellarAddress, network, adminEmail, address } = req.body;
+    const { name, slug, stellarAddress, network, adminEmail, address, timezone } = req.body;
 
     const errors = [];
     if (!name || typeof name !== 'string' || !name.trim())
@@ -23,6 +32,13 @@ async function createSchool(req, res, next) {
       errors.push('network must be "testnet" or "mainnet"');
     if (errors.length) return res.status(400).json({ errors, code: 'VALIDATION_ERROR' });
 
+    if (timezone !== undefined && !isValidTimezone(timezone)) {
+      return res.status(400).json({
+        error: 'Invalid timezone. Must be a valid IANA timezone string (e.g. Africa/Lagos)',
+        code: 'INVALID_TIMEZONE',
+      });
+    }
+
     const schoolId = `SCH-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
     const school = await School.create({
       schoolId,
@@ -32,6 +48,7 @@ async function createSchool(req, res, next) {
       network: network || 'testnet',
       adminEmail: adminEmail || null,
       address: address || null,
+      ...(timezone !== undefined && { timezone }),
     });
 
     // Audit log

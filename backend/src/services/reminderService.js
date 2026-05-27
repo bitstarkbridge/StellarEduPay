@@ -38,6 +38,23 @@ function isSmtpConfigured() {
 }
 
 /**
+ * Return true if the current wall-clock time in the given IANA timezone falls
+ * within business hours (08:00–17:59 local time).
+ */
+function isBusinessHours(timezone = 'UTC') {
+  const now = new Date();
+  const hour = parseInt(
+    new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      hour12: false,
+      timeZone: timezone,
+    }).format(now),
+    10
+  );
+  return hour >= 8 && hour < 18;
+}
+
+/**
  * Determine whether a student is eligible for a reminder right now.
  */
 function isEligible(student) {
@@ -79,6 +96,14 @@ async function processReminders() {
   summary.schools = schools.length;
 
   for (const school of schools) {
+    const schoolTimezone = school.timezone || 'UTC';
+
+    if (!isBusinessHours(schoolTimezone)) {
+      logger.info('Outside business hours — skipping school', { schoolId: school.schoolId, timezone: schoolTimezone });
+      summary.skipped++;
+      continue;
+    }
+
     // Fetch all unpaid students in this school that have a parent email
     const unpaidStudents = await Student.find({
       schoolId:    school.schoolId,
