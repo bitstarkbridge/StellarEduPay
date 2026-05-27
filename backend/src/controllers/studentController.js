@@ -175,7 +175,7 @@ async function deleteStudent(req, res, next) {
 async function updateStudent(req, res, next) {
   try {
     const { studentId } = req.params;
-    const { name, class: className, feeAmount } = req.body;
+    const { name, class: className, feeAmount, reminderOptOut } = req.body;
 
     const original = await Student.findOne({ schoolId: req.schoolId, studentId }).lean();
     if (!original) {
@@ -202,6 +202,7 @@ async function updateStudent(req, res, next) {
       }
     }
     if (feeAmount !== undefined) update.feeAmount = feeAmount;
+    if (reminderOptOut !== undefined) update.reminderOptOut = Boolean(reminderOptOut);
 
     const student = await Student.findOneAndUpdate(
       { schoolId: req.schoolId, studentId },
